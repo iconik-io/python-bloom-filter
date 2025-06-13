@@ -468,6 +468,8 @@ def try_unlink(filename):
 
 
 class BloomFilter(object):
+    backend = None
+
     """Probabilistic set membership testing for large sets"""
     def __init__(self,
                  max_elements=10000,
