@@ -45,17 +45,23 @@ class Mmap_backend(object):
 
     effs = 2 ** 8 - 1
 
-    def __init__(self, num_bits, filename):
+    def __init__(self, num_bits, filename, read_only=False):
+        self.read_only = read_only
+
         if not HAVE_MMAP:
             raise NotImplementedError("mmap is not available")
         self.num_bits = num_bits
         self.num_chars = (self.num_bits + 7) // 8
-        flags = os.O_RDWR | os.O_CREAT
+        if read_only:
+            flags = os.O_RDONLY
+        else:
+            flags = os.O_RDWR | os.O_CREAT
         if hasattr(os, 'O_BINARY'):
             flags |= getattr(os, 'O_BINARY')
         self.file_ = os.open(filename, flags)
-        os.lseek(self.file_, self.num_chars + 1, os.SEEK_SET)
-        os.write(self.file_, b'\x00')
+        if not read_only:
+            os.lseek(self.file_, self.num_chars + 1, os.SEEK_SET)
+            os.write(self.file_, b'\x00')
         self.mmap = mmap_mod.mmap(self.file_, self.num_chars)
 
     def is_set(self, bitno):
@@ -68,6 +74,9 @@ class Mmap_backend(object):
     def set(self, bitno):
         """set bit number bitno to true"""
 
+        if self.read_only:
+            raise Exception("Cannot set bits in read-only mmap backend")
+
         byteno, bit_within_byteno = divmod(bitno, 8)
         mask = 1 << bit_within_byteno
         byte = self.mmap[byteno]
@@ -76,6 +85,9 @@ class Mmap_backend(object):
 
     def clear(self, bitno):
         """clear bit number bitno - set it to false"""
+
+        if self.read_only:
+            raise Exception("Cannot clear in read-only mmap backend")
 
         byteno, bit_within_byteno = divmod(bitno, 8)
         mask = 1 << bit_within_byteno
@@ -115,15 +127,21 @@ class File_seek_backend(object):
 
     effs = 2 ** 8 - 1
 
-    def __init__(self, num_bits, filename):
+    def __init__(self, num_bits, filename, read_only=False):
+        self.read_only = read_only
         self.num_bits = num_bits
         self.num_chars = (self.num_bits + 7) // 8
-        flags = os.O_RDWR | os.O_CREAT
+        if read_only:
+            flags = os.O_RDONLY
+        else:
+            flags = os.O_RDWR | os.O_CREAT
         if hasattr(os, 'O_BINARY'):
             flags |= getattr(os, 'O_BINARY')
         self.file_ = os.open(filename, flags)
         os.lseek(self.file_, self.num_chars + 1, os.SEEK_SET)
-        os.write(self.file_, b'\x00')
+
+        if not read_only:
+            os.write(self.file_, b'\x00')
 
     def is_set(self, bitno):
         """Return true iff bit number bitno is set"""
@@ -136,6 +154,9 @@ class File_seek_backend(object):
     def set(self, bitno):
         """set bit number bitno to true"""
 
+        if self.read_only:
+            raise Exception("Cannot set bits in read-only file backend")
+
         byteno, bit_within_byteno = divmod(bitno, 8)
         mask = 1 << bit_within_byteno
         os.lseek(self.file_, byteno, os.SEEK_SET)
@@ -146,6 +167,9 @@ class File_seek_backend(object):
 
     def clear(self, bitno):
         """clear bit number bitno - set it to false"""
+
+        if self.read_only:
+            raise Exception("Cannot clear bits in read-only file backend")
 
         byteno, bit_within_byteno = divmod(bitno, 8)
         mask = 1 << bit_within_byteno
@@ -446,7 +470,8 @@ class BloomFilter(object):
                  error_rate=0.1,
                  probe_bitnoer=get_filter_bitno_probes,
                  filename=None,
-                 start_fresh=False):
+                 start_fresh=False,
+                 read_only=False):
         # pylint: disable=R0913
         # R0913: We want a few arguments
         if max_elements <= 0:
@@ -474,7 +499,7 @@ class BloomFilter(object):
             if start_fresh:
                 try_unlink(filename[0])
             if filename[1] == -1:
-                self.backend = Mmap_backend(self.num_bits_m, filename[0])
+                self.backend = Mmap_backend(self.num_bits_m, filename[0], read_only=read_only)
             else:
                 self.backend = Array_then_file_seek_backend(
                     self.num_bits_m,
