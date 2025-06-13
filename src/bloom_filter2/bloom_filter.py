@@ -52,17 +52,21 @@ class Mmap_backend(object):
             raise NotImplementedError("mmap is not available")
         self.num_bits = num_bits
         self.num_chars = (self.num_bits + 7) // 8
-        if read_only:
+        if self.read_only:
             flags = os.O_RDONLY
         else:
             flags = os.O_RDWR | os.O_CREAT
         if hasattr(os, 'O_BINARY'):
             flags |= getattr(os, 'O_BINARY')
         self.file_ = os.open(filename, flags)
-        if not read_only:
+        if not self.read_only:
             os.lseek(self.file_, self.num_chars + 1, os.SEEK_SET)
             os.write(self.file_, b'\x00')
-        self.mmap = mmap_mod.mmap(self.file_, self.num_chars)
+        self.mmap = mmap_mod.mmap(
+            self.file_,
+            self.num_chars,
+            access=mmap_mod.ACCESS_READ if self.read_only else mmap_mod.ACCESS_DEFAULT
+        )
 
     def is_set(self, bitno):
         """Return true iff bit number bitno is set"""
